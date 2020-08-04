@@ -32,7 +32,8 @@ if ENCODED:
     else:    
         N_OUTPUT = int(sys.argv[6])  # Representation dimensionality
 else:
-    N_OUTPUT = 192 * 2  # Number of Gesture Feature (position + velocity)
+    # N_OUTPUT = 192 * 2  # Number of Gesture Feature (position + velocity)
+    N_OUTPUT = 12
 
 
 EPOCHS = int(sys.argv[2])
