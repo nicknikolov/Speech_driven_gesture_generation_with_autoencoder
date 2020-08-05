@@ -3,11 +3,9 @@ example=43
 encode_dim=12
 dataset_dir="obama_processed"
 chkpt_dir="chkpt_obama"
+model_name="headpose${encode_dim}.hdf5"
 
 steps=()
-
-mkdir -p ${chkpt_dir}
-mkdir -p headpose/results/${example_name}
 
 while [ $# -gt 0 ]; do
    if [[ $1 == *"--"* ]]; then
@@ -28,6 +26,9 @@ echo "processed dataset dir:"  ${dataset_dir}
 echo "DAE checkpoint dir:" ${chkpt_ir}
 echo "results dir:"  ${dir}
 echo "steps"  ${steps}
+
+mkdir -p ${chkpt_dir}
+mkdir -p headpose/results/${example_name}
 
 # PIPELINE
 
@@ -71,8 +72,8 @@ fi
 
 # 5. encode test data
 if [[ " ${steps[@]} " =~ 5 ]]; then
-  echo "Step 5: Ecoding test datal"
-  python predict.py headpose.hdf5 ${dataset_dir}/test_inputs/X_test_audio${example}.npy ${dir}/${example_name}_ENC.txt
+  echo "Step 5: Ecoding test data"
+  python predict.py ${model_name} ${dataset_dir}/test_inputs/X_test_audio${example}.npy ${dir}/${example_name}_ENC.txt
 fi
 
 # 6. decode model results
@@ -95,7 +96,7 @@ fi
 if [[ " ${steps[@]} " =~ 8 ]]; then
   echo "Step 8: Stitching video and predicted headpose"
   ffmpeg \
-    -i obama/annotated/annotated39.mp4 \
+    -i obama/annotated/annotated${example}.mp4 \
     -i ${dir}/${example_name}_ANIM.mp4 \
     -filter_complex '[0:v]pad=iw*2:ih[int];[int][1:v]overlay=W/2:0[vid]' \
     -map [vid] \
@@ -108,6 +109,6 @@ fi
 # 9. combine animation and audio
 if [[ " ${steps[@]} " =~ 9 ]]; then
   echo "Step 9: Combining animation and audio"
-  ffmpeg -i ${dir}/${example_name}_VID.mp4 -i ${dataset_dir}/test/inputs/audio39.wav \
+  ffmpeg -i ${dir}/${example_name}_VID.mp4 -i ${dataset_dir}/test/inputs/audio${example}.wav \
     -c:v copy -map 0:v:0 -map 1:a:0 -c:a aac -b:a 192k ${dir}/${example_name}_ALL.mp4
 fi
