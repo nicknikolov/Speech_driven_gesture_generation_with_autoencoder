@@ -52,13 +52,12 @@ def pad_sequence(input_vectors):
 
     return new_input_vectors
 
-def create_vectors(audio_filename, gesture_filename, nodes):
+def create_vectors(audio_filename, gesture_filename):
     """
     Extract features from a given pair of audio and motion files
     Args:
         audio_filename:    file name for an audio file (.wav)
         gesture_filename:  file name for a motion file (.bvh)
-        nodes:             an array of markers for the motion
 
     Returns:
         input_with_context   : speech features
@@ -70,40 +69,13 @@ def create_vectors(audio_filename, gesture_filename, nodes):
     if FEATURES == "MFCC":
         input_vectors = calculate_mfcc(audio_filename)
 
-    # Step 2: Vectorize BVH
-
-    # f = open(gesture_filename, 'r')
-    # org = f.readlines()
-    # frametime = org[310].split()
-
-    # del org[0:311]
-
-    # bvh_len = len(org)
-
-    # for idx, line in enumerate(org):
-    #     org[idx] = [float(x) for x in line.split()]
-
-    # for i in range(0, bvh_len):
-    #     for j in range(0, int(306 / 3)):
-    #         st = j * 3
-    #         del org[i][st:st + 3]
-
-    # # if data is 100fps, cut it to 20 fps (every fifth line)
-    # # if data is approx 24fps, cut it to 20 fps (del every sixth line)
-    # if float(frametime[2]) == 0.0416667:
-    #     del org[::6]
-    # elif float(frametime[2]) == 0.010000:
-    #     org = org[::5]
-    # else:
-    #     print("smth wrong with fps of " + gesture_filename)
-
-    # output_vectors = rot_vec_to_abs_pos_vec(org, nodes)
-
-    # f.close()
-
     data = pd.read_csv(gesture_filename, sep=', ', engine='python')
 
     Ts = data[['pose_Tx', 'pose_Ty', 'pose_Tz']].to_numpy()
+    # since data was sources on different camera angles, lets assume face is always in the centre
+    mean_pose = Ts.mean(axis=(0))
+    Ts = Ts - mean_pose
+
     Rs = data[['pose_Rx', 'pose_Ry', 'pose_Rz']].to_numpy()
 
     # OpenFace convention is positive Z to be away from camera
@@ -146,11 +118,7 @@ def create_vectors(audio_filename, gesture_filename, nodes):
 
     output_vectors = np.concatenate((Ts, Ts_dir, T_vels, T_dir_vels), axis=1)
 
-    # print('T shapes', Ts.shape)
-    # print('out stacked', output_vectors.shape)
-    # print('input vectors', input_vectors.shape)
-
-    # Step 3: Align vector length
+    # # Step 3: Align vector length
     input_vectors, output_vectors = shorten(input_vectors, output_vectors)
 
     # Step 4: Retrieve N_CONTEXT each time, stride one by one
@@ -172,156 +140,11 @@ def create_vectors(audio_filename, gesture_filename, nodes):
 
     return input_with_context, output_with_context
 
-
-def create_hierarchy_nodes(hierarchy):
-    """
-    Create hierarchy nodes: an array of markers used in the motion capture
-    Args:
-        hierarchy: bvh file read in a structure
-
-    Returns:
-        nodes: array of markers to be used in motion processing
-
-    """
-    joint_offsets = []
-    joint_names = []
-
-    for idx, line in enumerate(hierarchy):
-        hierarchy[idx] = hierarchy[idx].split()
-        if not len(hierarchy[idx]) == 0:
-            line_type = hierarchy[idx][0]
-            if line_type == 'OFFSET':
-                offset = np.array([float(hierarchy[idx][1]), float(hierarchy[idx][2]), float(hierarchy[idx][3])])
-                joint_offsets.append(offset)
-            elif line_type == 'ROOT' or line_type == 'JOINT':
-                joint_names.append(hierarchy[idx][1])
-            elif line_type == 'End':
-                joint_names.append('End Site')
-
-    nodes = []
-    for idx, name in enumerate(joint_names):
-        if idx == 0:
-            parent = None
-        elif idx in [6, 30]: #spine1->shoulders
-            parent = 2
-        elif idx in [14, 18, 22, 26]: #lefthand->leftfingers
-            parent = 9
-        elif idx in [38, 42, 46, 50]: #righthand->rightfingers
-            parent = 33
-        elif idx in [54, 59]: #hip->legs
-            parent = 0
-        else:
-            parent = idx - 1
-
-        if name == 'End Site':
-            children = None
-        elif idx == 0: #hips
-            children = [1, 54, 59]
-        elif idx == 2: #spine1
-            children = [3, 6, 30]
-        elif idx == 9: #lefthand
-            children = [10, 14, 18, 22, 26]
-        elif idx == 33: #righthand
-            children = [34, 38, 42, 46, 50]
-        else:
-            children = [idx + 1]
-
-        node = dict([('name', name), ('parent', parent), ('children', children), ('offset', joint_offsets[idx]), ('rel_degs', None), ('abs_qt', None), ('rel_pos', None), ('abs_pos', None)])
-        if idx == 0:
-            node['rel_pos'] = node['abs_pos'] = [float(0), float(60), float(0)]
-            node['abs_qt'] = pyq.Quaternion()
-        nodes.append(node)
-
-    return nodes
-
-
-def rot_vec_to_abs_pos_vec(frames, nodes):
-    """
-    Transform vectors of the human motion from the joint angles to the absolute positions
-    Args:
-        frames: human motion in the join angles space
-        nodes:  set of markers used in motion caption
-
-    Returns:
-        output_vectors : 3d coordinates of this human motion
-    """
-    output_lines = []
-
-    for frame in frames:
-        node_idx = 0
-        for i in range(51): #changed from 51
-            stepi = i*3
-            z_deg = float(frame[stepi])
-            x_deg = float(frame[stepi+1])
-            y_deg = float(frame[stepi+2])
-
-            if nodes[node_idx]['name'] == 'End Site':
-                 node_idx = node_idx + 1
-            nodes[node_idx]['rel_degs'] = [z_deg, x_deg, y_deg]
-            current_node = nodes[node_idx]
-
-            node_idx = node_idx + 1
-
-        for start_node in nodes:
-            abs_pos = np.array([0, 60, 0])
-            current_node = start_node
-            if start_node['children'] is not None: #= if not start_node['name'] = 'end site'
-                for child_idx in start_node['children']:
-                    child_node = nodes[child_idx]
-
-                    child_offset = np.array(child_node['offset'])
-                    qz = pyq.Quaternion(axis=[0, 0, 1], degrees=start_node['rel_degs'][0])
-                    qx = pyq.Quaternion(axis=[1, 0, 0], degrees=start_node['rel_degs'][1])
-                    qy = pyq.Quaternion(axis=[0, 1, 0], degrees=start_node['rel_degs'][2])
-                    qrot = qz * qx * qy
-                    offset_rotated = qrot.rotate(child_offset)
-                    child_node['rel_pos']= start_node['abs_qt'].rotate(offset_rotated)
-
-                    child_node['abs_qt'] = start_node['abs_qt'] * qrot
-
-            while current_node['parent'] is not None:
-
-                abs_pos = abs_pos + current_node['rel_pos']
-                current_node = nodes[current_node['parent']]
-            start_node['abs_pos'] = abs_pos
-
-        line = []
-        for node in nodes:
-            line.append(node['abs_pos'])
-        output_lines.append(line)
-
-    output_vels = []
-    for idx, line in enumerate(output_lines):
-        vel_line = []
-        for jn, joint_pos in enumerate(line):
-           if idx == 0:
-               vels = np.array([0.0, 0.0, 0.0])
-           else:
-               vels = np.array([joint_pos[0] - output_lines[idx-1][jn][0], joint_pos[1] - output_lines[idx-1][jn][1], joint_pos[2] - output_lines[idx-1][jn][2]])
-           vel_line.append(vels)
-        output_vels.append(vel_line)
-
-    out = []
-    for idx, line in enumerate(output_vels):
-        ln = []
-        for jn, joint_vel in enumerate(line):
-            ln.append(output_lines[idx][jn])
-            ln.append(joint_vel)
-        out.append(ln)
-
-    output_array = np.asarray(out)
-    output_vectors = np.empty([len(output_array), N_OUTPUT])
-    for idx, line in enumerate(output_array):
-        output_vectors[idx] = line.flatten()
-    return output_vectors
-
-
-def create(name, nodes):
+def create(name):
     """
     Create a dataset
     Args:
         name:  dataset: 'train' or 'test' or 'dev
-        nodes: markers used in motion caption
 
     Returns:
         nothing: saves numpy arrays of the features and labels as .npy files
@@ -332,7 +155,7 @@ def create(name, nodes):
     Y = np.array([])
 
     for i in range(len(DATA_FILE)):
-        input_vectors, output_vectors = create_vectors(DATA_FILE['wav_filename'][i], DATA_FILE['pose_filename'][i], nodes)
+        input_vectors, output_vectors = create_vectors(DATA_FILE['wav_filename'][i], DATA_FILE['pose_filename'][i])
 
         if len(X) == 0:
             X = input_vectors
@@ -354,11 +177,10 @@ def create(name, nodes):
     np.save(y_file_name, Y)
 
 
-def create_test_sequences(nodes, dataset):
+def create_test_sequences(dataset):
     """
     Create test sequences
     Args:
-        nodes:    markers used in motion caption
         dataset:  dataset name ('train', 'test' or 'dev')
 
     Returns:
@@ -371,20 +193,23 @@ def create_test_sequences(nodes, dataset):
     print('DATA DIR', dataset)
 
     for i in range(len(DATA_FILE)):
-        input_vectors, output_vectors = create_vectors(DATA_FILE['wav_filename'][i], DATA_FILE['pose_filename'][i], nodes)
+        input_vectors, output_vectors = create_vectors(DATA_FILE['wav_filename'][i], DATA_FILE['pose_filename'][i])
 
 
         array = DATA_FILE['wav_filename'][i].split("/")
         name = array[len(array)-1].split(".")[0]
 
         X = input_vectors
+        Y = output_vectors
 
         if not os.path.isdir(DATA_DIR + '/'+dataset+'_inputs'):
             os.makedirs(DATA_DIR +  '/'+dataset+'_inputs')
 
         x_file_name = DATA_DIR + '/'+dataset+'_inputs/X_test_' + name + '.npy'
+        y_file_name = DATA_DIR + '/'+dataset+'_inputs/Y_test_' + name + '.npy'
 
         np.save(x_file_name, X)
+        np.save(y_file_name, Y)
 
 
 if __name__ == "__main__":
@@ -401,12 +226,9 @@ if __name__ == "__main__":
 
     DATA_DIR = sys.argv[1]
     N_CONTEXT = int(sys.argv[2])
-    f = open('hierarchy.txt', 'r')
-    hierarchy = f.readlines()
-    f.close()
-    nodes = create_hierarchy_nodes(hierarchy)
 
-    create_test_sequences(nodes, 'test')
-    create('test', nodes)
-    create('dev', nodes)
-    create('train', nodes)
+    create_test_sequences('test')
+
+    create('test')
+    create('dev')
+    create('train')
