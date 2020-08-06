@@ -51,7 +51,11 @@ def parse_openface(filepath):
     # Ts[:, 2] = -Ts[:, 2]
     # Rs = data[['pose_Rz', 'pose_Rx', 'pose_Ry']].to_numpy()
 
+    # move to the center, just as in the training data
     Ts = data[['pose_Tz', 'pose_Tx', 'pose_Ty']].to_numpy()
+    mean_pose = Ts.mean(axis=(0))
+    Ts = Ts - mean_pose
+
     Rs = data[['pose_Rz', 'pose_Rx', 'pose_Ry']].to_numpy()
 
     Ts_dir = Ts.copy()
@@ -135,14 +139,14 @@ def main(save=True):
     # Number of iterations
     iterations = len(data)
 
-    xmin = np.min(data[:, 0, 0]) - 5
-    xmax = np.max(data[:, 0, 0]) + 5
+    xmin = np.min(data[:, 0, 0]) - 50
+    xmax = np.max(data[:, 0, 0]) + 50
 
-    ymin = np.min(data[:, 0, 1]) - 5
-    ymax = np.max(data[:, 0, 1]) + 5
+    ymin = np.min(data[:, 0, 1]) - 50
+    ymax = np.max(data[:, 0, 1]) + 50
 
-    zmin = np.min(data[:, 0, 2]) - 5
-    zmax = np.max(data[:, 0, 2]) + 5
+    zmin = np.min(data[:, 0, 2]) - 50
+    zmax = np.max(data[:, 0, 2]) + 50
 
     # Setting the axes properties
     ax.set_xlim3d([xmin, xmax])
