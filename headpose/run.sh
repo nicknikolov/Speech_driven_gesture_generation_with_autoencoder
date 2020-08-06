@@ -32,6 +32,12 @@ mkdir -p headpose/results/${example_name}
 
 # PIPELINE
 
+# 0. pre prepare
+if [[ " ${steps[@]} " =~ 0 ]]; then
+  echo "Step 0: Setting up data folder"
+  python data_processing/prepare_obama.py ${dataset_dir}/
+fi
+
 # 1. prepare data - data dir, N_CONTEXT
 if [[ " ${steps[@]} " =~ 1 ]]; then
   echo "Step 1: Preparing data for training"
@@ -46,9 +52,9 @@ if [[ " ${steps[@]} " =~ 2 ]]; then
     -chkpt_dir=${chkpt_dir} \
     -layer1_width=${encode_dim} \
     -frame_size=12 \
-    -batch_size=64 \
-    -training_epochs=40
-    # -early_stopping=false \
+    -batch_size=128 \
+    -training_epochs=40 \
+    -early_stopping=false
 fi
 
 # 3. encode dataset
