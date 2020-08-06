@@ -28,7 +28,10 @@ if __name__ == '__main__':
 
     # Get the data
     train_normalized_data, train_data, test_normalized_data, test_data, dev_normalized_data, \
-    max_val, mean_pose = prepare_motion_data(DATA_DIR)
+    max_val, mean_pose, Y_39_normalized = prepare_motion_data(DATA_DIR)
+
+    np.set_printoptions(precision=5)
+    print("39", Y_39_normalized)
 
     # Restore the network
     nn = create_nn(train_normalized_data, dev_normalized_data, max_val, mean_pose, restoring=True)
@@ -94,3 +97,12 @@ if __name__ == '__main__':
 
     # And save into files
     np.save(DATA_DIR+"/"+str(fl.FLAGS.layer1_width)+"/Y_dev_encoded.npy", encoded_dev_data)
+
+    # Encode one example for testing
+    encoded_39_data = tr.encode(nn, Y_39_normalized)
+    print('SHHH', encoded_39_data.shape)
+
+    # And save into files
+    # np.save(DATA_DIR+"/"+str(fl.FLAGS.layer1_width)+"/Y_39_encoded.npy", encoded_39_data)
+    np.savetxt(DATA_DIR+"/"+str(fl.FLAGS.layer1_width)+"/Y_39_encoded.txt", encoded_39_data)
+

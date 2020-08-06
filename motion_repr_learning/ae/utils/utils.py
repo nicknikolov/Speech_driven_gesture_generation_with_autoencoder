@@ -167,34 +167,56 @@ def prepare_motion_data(data_dir):
     """
 
     # Get the data
-
     Y_train = np.load(data_dir + '/Y_train.npy')
     Y_dev = np.load(data_dir + '/Y_dev.npy')
     Y_test = np.load(data_dir + '/Y_test.npy')
+    Y_39 = np.load(data_dir + '/test_inputs/Y_test_audio39.npy')
 
     # Normalize dataset
+    # Max val and mean for each of the feature dimensions
     max_val = np.amax(np.absolute(Y_train), axis=(0))
     mean_pose = Y_train.mean(axis=(0))
+
+    # print('max val shape', max_val.shape)
+    # print('max val newaxis shape', max_val[np.newaxis, :].shape)
+
+    np.set_printoptions(precision=1)
+    np.set_printoptions(suppress=True)
+
+    # print('max ratio  ', np.amax(np.absolute(Y_train), axis=(0)) / np.amax(np.absolute(Y_dev), axis=(0)))
+    print('max train  ', np.amax(np.absolute(Y_train), axis=(0)))
+    print('max dev    ', np.amax(np.absolute(Y_dev), axis=(0)))
+    print('max test   ', np.amax(np.absolute(Y_test), axis=(0)))
+    print('max 39     ', np.amax(np.absolute(Y_39), axis=(0)))
+
+    print('mean train', Y_train.mean(axis=(0)))
+    print('mean dev  ', Y_dev.mean(axis=(0)))
+    print('mean test ', Y_test.mean(axis=(0)))
+    print('mean 39   ', Y_39.mean(axis=(0)))
 
     Y_train_centered = Y_train - mean_pose[np.newaxis, :]
     Y_dev_centered = Y_dev - mean_pose[np.newaxis, :]
     Y_test_centered = Y_test - mean_pose[np.newaxis, :]
+    Y_39_centered = Y_39 - mean_pose[np.newaxis, :]
 
     # Scales all values in the input_data to be between -1 and 1
     eps = 1e-8
     Y_train_normalized = np.divide(Y_train_centered, max_val[np.newaxis, :] + eps)
     Y_dev_normalized = np.divide(Y_dev_centered, max_val[np.newaxis, :] + eps)
     Y_test_normalized = np.divide(Y_test_centered, max_val[np.newaxis, :] + eps)
+    Y_39_normalized = np.divide(Y_39_centered, max_val[np.newaxis, :] + eps)
 
     # Reshape to accomodate multiple frames at each input
 
     if fl.FLAGS.chunk_length > 1:
+        print("reshaping???")
         Y_train_normalized = reshape_dataset(Y_train_normalized)
         Y_dev_normalized = reshape_dataset(Y_dev_normalized)
         Y_test_normalized = reshape_dataset(Y_test_normalized)
 
     # Pad max values and the mean pose, if neeeded
     if fl.FLAGS.chunk_length > 1:
+        print("padding???")
         max_val = np.tile(max_val, fl.FLAGS.chunk_length)
         mean_pose = np.tile(mean_pose, fl.FLAGS.chunk_length)
 
@@ -211,4 +233,4 @@ def prepare_motion_data(data_dir):
         exit(1)
 
     return Y_train_normalized, Y_train, Y_test_normalized, Y_test,\
-           Y_dev_normalized, max_val, mean_pose
+           Y_dev_normalized, max_val, mean_pose, Y_39_normalized
