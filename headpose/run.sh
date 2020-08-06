@@ -1,9 +1,8 @@
 # VARIABLES
-example=43
-encode_dim=12
+example=39
+encode_dim=6
 dataset_dir="obama_processed"
 chkpt_dir="chkpt_obama"
-model_name="headpose${encode_dim}.hdf5"
 
 steps=()
 
@@ -17,6 +16,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+model_name="headpose${encode_dim}.hdf5"
 example_name=ex${example}--dim${encode_dim}
 dir="headpose/results/${example_name}"
 
@@ -72,7 +72,7 @@ fi
 # 4. train model - model name, epochs, data_dir, speech features, encode, encode_dim
 if [[ " ${steps[@]} " =~ 4 ]]; then
   echo "Step 4: Train model"
-  python train.py headpose.hdf5 10 ${dataset_dir} 26 True ${encode_dim}
+  python train.py ${model_name} 20 ${dataset_dir} 26 True ${encode_dim}
 # python train.py headpose.hdf5 10 ${dataset_dir} 26 False ${encode_dim}
 fi
 
