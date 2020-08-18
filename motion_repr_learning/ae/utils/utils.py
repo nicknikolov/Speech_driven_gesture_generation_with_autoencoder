@@ -170,7 +170,8 @@ def prepare_motion_data(data_dir):
     Y_train = np.load(data_dir + '/Y_train.npy')
     Y_dev = np.load(data_dir + '/Y_dev.npy')
     Y_test = np.load(data_dir + '/Y_test.npy')
-    Y_39 = np.load(data_dir + '/test_inputs/Y_test_audio39.npy')
+    # Y_39 = np.load(data_dir + '/test_inputs/Y_test_audio39.npy')
+    Y_39 = np.load('new_data/Y32.npy')
 
     # Normalize dataset
     # Max val and mean for each of the feature dimensions
