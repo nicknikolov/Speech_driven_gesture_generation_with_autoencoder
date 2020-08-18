@@ -18,7 +18,9 @@ from scipy.spatial.transform import Rotation as R
 from tools import *
 
 # N_OUTPUT = 192 * 2 # Number of gesture features (position)
-N_OUTPUT = 12 # translation, look direction and their velocities
+# N_OUTPUT = 12 # translation, look direction and their velocities
+N_OUTPUT = 24 # 3 translation, 9 rotation unit vecs, 3 translation vels, 9 rotation vels
+# N_OUTPUT = 18 # 9 rotation unit vecs, , 9 rotation vels
 WINDOW_LENGTH = 50 # in miliseconds
 FEATURES = "MFCC"
 N_CONTEXT = 60
@@ -52,6 +54,70 @@ def pad_sequence(input_vectors):
 
     return new_input_vectors
 
+def encode_rot(rotvec):
+    # positive z in OpenCV coord system
+    unitx = np.array([-1.0, 0, 0])
+    unity = np.array([0, -1.0, 0])
+    unitz = np.array([0, 0, 1.0])
+    coord_sys = np.array([[unitx, unity, unitz],] * rotvec.shape[0])
+
+    r = R.from_rotvec(rotvec)
+
+    coord_sys[:, 0] = r.apply(coord_sys[:, 0])
+    coord_sys[:, 1] = r.apply(coord_sys[:, 1])
+    coord_sys[:, 2] = r.apply(coord_sys[:, 2])
+
+    return coord_sys
+
+def encode_rot2(rotvec):
+    # positive z in OpenCV coord system
+    unitx = np.array([-1, 0, 0])
+    unity = np.array([0, -1, 0])
+    unitz = np.array([0, 0, 1])
+    coord_sys = np.array([unitx, unity, unitz])
+    r = R.from_rotvec(rotvec)
+    coord_sys = r.apply(coord_sys)
+    return coord_sys
+
+def decode_rot(encoded):
+    # positive z in OpenCV coord system
+    unitx = np.array([-1, 0, 0])
+    unity = np.array([0, -1, 0])
+    unitz = np.array([0, 0, 1])
+    decodedx = decode_axis(encoded[0], unitx)
+    decodedy = decode_axis(encoded[1], unity)
+    decodedz = decode_axis(encoded[2], unitz)
+
+    # holy cow, this can't be the right way
+    pitch = (decodedy[0] + decodedz[0]) / 2
+    yaw = (decodedx[1] + decodedz[1]) / 2
+    roll = (decodedx[2] + decodedy[2]) / 2
+
+    decoded = np.array([pitch, yaw, roll])
+    return decoded
+
+
+def decode_axis(lookdir, unit):
+    rm = rotation_matrix_from_vectors(unit, lookdir)
+    r = R.from_matrix(rm)
+    return r.as_rotvec()
+
+def rotation_matrix_from_vectors(vec1, vec2):
+    """ Find the rotation matrix that aligns vec1 to vec2
+    :param vec1: A 3d "source" vector
+    :param vec2: A 3d "destination" vector
+    :return mat: A transform matrix (3x3) which when applied to vec1, aligns it with vec2.
+
+    SOURCE: https://stackoverflow.com/questions/45142959/calculate-rotation-matrix-to-align-two-vectors-in-3d-space
+    """
+    a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
+    v = np.cross(a, b)
+    c = np.dot(a, b)
+    s = np.linalg.norm(v)
+    kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
+    return rotation_matrix
+
 def create_vectors(audio_filename, gesture_filename):
     """
     Extract features from a given pair of audio and motion files
@@ -75,31 +141,19 @@ def create_vectors(audio_filename, gesture_filename):
     # since data was sources on different camera angles, lets assume face is always in the centre
     mean_pose = Ts.mean(axis=(0))
     Ts = Ts - mean_pose
-
     Rs = data[['pose_Rx', 'pose_Ry', 'pose_Rz']].to_numpy()
 
-    # OpenFace convention is positive Z to be away from camera
-    # I assume face is facing camera, so direction is towards negative z
-    Ts_dir = Ts.copy()
-    Ts_dir[:, 2] -= 50
-
-    for i in range(Ts_dir.shape[0]):
-        t = Ts[i, :]
-        dir = Ts_dir[i, :] - t
-        r = Rs[i, :]
-
-        rot = R.from_rotvec(r)
-        new_dir = rot.apply(dir) + t
-        Ts_dir[i, :] = new_dir
-
-    # remove every third element from my headpose to get to 20fps
-    # print('Ts', Ts.shape)
-
-    # Ts = Ts[::3, :]
+    # drop fps from 30 to 20
     Ts = np.delete(Ts, slice(None, None, 3), axis=0)
-    Ts_dir = np.delete(Ts_dir, slice(None, None, 3), axis=0)
+    Rs = np.delete(Rs, slice(None, None, 3), axis=0)
 
-    # calculate velocity
+    # encode rotations as 3D unit vectors
+    encs = encode_rot(Rs)
+    encs[:, 0, :] += Ts
+    encs[:, 1, :] += Ts
+    encs[:, 2, :] += Ts
+
+    # calculate velocity for translations
     T_vels = []
     T_vels.append([0, 0, 0])
     t_prev = Ts[0]
@@ -108,15 +162,45 @@ def create_vectors(audio_filename, gesture_filename):
         T_vels.append(vel)
     T_vels.append([0, 0, 0])
 
-    T_dir_vels = []
-    T_dir_vels.append([0, 0, 0])
-    t_prev = Ts_dir[0]
-    for t in Ts_dir[1:-1]:
-        vel = t - t_prev
-        T_dir_vels.append(vel)
-    T_dir_vels.append([0, 0, 0])
+    # calculate velocity for rotations
+    # X
+    Rx_vels = []
+    Rx_vels.append([0, 0, 0])
+    Rx_prev = encs[0, 0, :]
 
-    output_vectors = np.concatenate((Ts, Ts_dir, T_vels, T_dir_vels), axis=1)
+    for Rx in encs[1:-1, 0, :]:
+        vel = Rx - Rx_prev
+        Rx_vels.append(vel)
+
+    Rx_vels.append([0, 0, 0])
+
+    # Y
+    Ry_vels = []
+    Ry_vels.append([0, 0, 0])
+    Ry_prev = encs[0, 1, :]
+
+    for Ry in encs[1:-1, 1, :]:
+        vel = Ry - Ry_prev
+        Ry_vels.append(vel)
+
+    Ry_vels.append([0, 0, 0])
+
+    # Z
+    Rz_vels = []
+    Rz_vels.append([0, 0, 0])
+    Rz_prev = encs[0, 2, :]
+
+    for Rz in encs[1:-1, 2, :]:
+        vel = Rz - Rz_prev
+        Rz_vels.append(vel)
+
+    Rz_vels.append([0, 0, 0])
+
+    # flatten
+    encs = encs.reshape(encs.shape[0], 9)
+
+    # output_vectors = np.concatenate((Ts, Ts_dir, T_vels, T_dir_vels), axis=1) # N x 12
+    output_vectors = np.concatenate((Ts, encs, T_vels, Rx_vels, Ry_vels, Rz_vels), axis=1) # N x 3+9+3+3+3+3 = 24
 
     # # Step 3: Align vector length
     input_vectors, output_vectors = shorten(input_vectors, output_vectors)

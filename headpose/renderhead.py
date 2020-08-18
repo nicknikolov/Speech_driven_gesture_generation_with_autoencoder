@@ -8,6 +8,7 @@ from scipy.spatial.transform import Rotation as R
 from subprocess import call
 from scipy.io import wavfile
 import tempfile
+import argparse
 
 def parse_openface(filepath):
     data = pd.read_csv(filepath, sep=', ', engine='python')
@@ -17,6 +18,26 @@ def parse_openface(filepath):
     mean_pose = Ts.mean(axis=(0))
     Ts = Ts - mean_pose
     Rs = data[['pose_Rx', 'pose_Ry', 'pose_Rz']].to_numpy()
+
+    return Ts, Rs
+
+def parse_decoded(filepath):
+    data_raw = np.loadtxt(filepath)
+
+    # for prediction with 6 coords
+    Ts = data_raw[:,0:3] # translation
+    encs = data_raw[:,3:12] # encoded rotation
+
+    encs = encs.reshape((data_raw.shape[0], 3, 3))
+    encs[:, 0, :] -= Ts
+    encs[:, 1, :] -= Ts
+    encs[:, 2, :] -= Ts
+
+    Rs = []
+    for i in range(data_raw.shape[0]):
+        enc = encs[i]
+        r = decode_rot(enc)
+        Rs.append(r)
 
     return Ts, Rs
 
@@ -102,59 +123,87 @@ def render_head(t, r):
 
     return color[..., ::-1]
 
-def render_sequence_meshes(audio_fname, Ts, Rs, out_path):
+def render_sequence_meshes(Ts, Rs, out_path):
     FPS = 20
 
-    if not os.path.exists(out_path):
-        os.makedirs(out_path)
-
-    tmp_video_file = tempfile.NamedTemporaryFile('w', suffix='.mp4', dir=out_path)
     if int(cv2.__version__[0]) < 3:
-        writer = cv2.VideoWriter(tmp_video_file.name, cv2.cv.CV_FOURCC(*'mp4v'), FPS, (800, 800), True)
+        writer = cv2.VideoWriter(out_path, cv2.cv.CV_FOURCC(*'mp4v'), FPS, (800, 800), True)
     else:
-        writer = cv2.VideoWriter(tmp_video_file.name, cv2.VideoWriter_fourcc(*'mp4v'), FPS, (800, 800), True)
+        writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*'mp4v'), FPS, (800, 800), True)
 
     for i in range(Ts.shape[0]):
+    # for i in range(10):
         t = Ts[i]
 
         rotvec = Rs[i]
+        print('rotvec', rotvec)
+        rotvec[1] = -rotvec[1]
+        rotvec[2] = -rotvec[2]
 
-        encoded = encode_rot(rotvec)
-        decoded = decode_rot(encoded)
+        # encoded = encode_rot(rotvec)
+        # decoded = decode_rot(encoded)
 
-        # move to openGL coord system
+        # # move to openGL coord system
         t[1] = -t[1]
         t[2] = -t[2]
-        decoded[1] = -decoded[1]
-        decoded[2] = -decoded[2]
+        # decoded[1] = -decoded[1]
+        # decoded[2] = -decoded[2]
 
         # pass as rot matrix
-        r = R.from_rotvec(decoded)
+        # r = R.from_rotvec(decoded)
+        r = R.from_rotvec(rotvec)
         img = render_head(t, r.as_matrix())
         writer.write(img)
 
     writer.release()
 
-    video_fname = os.path.join(out_path, 'video.mp4')
-    cmd = ('ffmpeg' + ' -y -i {0} -i {1} -vcodec h264 -ac 2 -channel_layout stereo -pix_fmt yuv420p {2}'.format(
-        audio_fname, tmp_video_file.name, video_fname)).split()
-    call(cmd)
+    # video_fname = os.path.join(out_path, 'video.mp4')
+    # cmd = ('ffmpeg' + ' -y -i {0} -i {1} -vcodec h264 -ac 2 -channel_layout stereo -pix_fmt yuv420p {2}'.format(
+    #     audio_fname, tmp_video_file.name, video_fname)).split()
+    # call(cmd)
 
     # cmd = 'ffmpeg' + ' -y -i new_data/video.mp4 -i obama/annotated/annotated32.mp4 -filter_complex [0:v]pad=iw*2:ih[int];[int][1:v]overlay=W/2:0[vid] -map [vid] -c:v libx264 -crf 23 -preset veryfast new_data/merge.mp4'
     # call(cmd)
 
-ex32 = 'obama_processed/train/labels/pose32.csv'
-audio32 = 'obama_processed/train/inputs/audio32.wav'
 
-Ts, Rs = parse_openface(ex32)
-# 30 to 20fps
-Ts = np.delete(Ts, slice(None, None, 3), axis=0)
-Rs = np.delete(Rs, slice(None, None, 3), axis=0)
+def main(save=True):
+    """
+    Creates the 3D figure and animates it with the input data.
 
-# t = Ts[0]
-# rotvec = Rs[0]
-# render_head(t, r)
+    Args:
+        data (list): List of the data positions at each iteration.
+        save (bool): Whether to save the recording of the animation. (Default to False).
+    """
 
-render_sequence_meshes(audio32, Ts, Rs, 'new_data')
+    parser = argparse.ArgumentParser(
+        description='Animate head translation and look direction')
+    parser.add_argument('--input', '-i', required=True,
+                        help='input filename')
+    parser.add_argument('--output', '-o', required=True,
+                        help='output filename')
+    parser.add_argument('--openface', dest='openface', action='store_true')
+    parser.add_argument('--no-openfacee', dest='openface', action='store_false')
+    parser.set_defaults(openface=False)
+
+    args = parser.parse_args()
+
+    Ts = None
+    Rs = None
+    if (args.openface):
+        # data = parse_openface(args.input)
+        Ts, Rs = parse_openface(args.input)
+        # 30 to 20fps
+        Ts = np.delete(Ts, slice(None, None, 3), axis=0)
+        Rs = np.delete(Rs, slice(None, None, 3), axis=0)
+    else:
+        Ts, Rs = parse_decoded(args.input)
+
+    # t = Ts[0]
+    # rotvec = Rs[0]
+    # render_head(t, r)
+
+    render_sequence_meshes(Ts, Rs, args.output)
 
 
+if __name__ == '__main__':
+    main()
