@@ -205,7 +205,7 @@ def learning(data, data_info, just_restore=False):
                         # Print results of screen
                         epoch_str = "| {0:3.0f} ".format(epoch)[:5]
                         perc_str = "({0:3.2f}".format(epoch*100.0 / fl.FLAGS.training_epochs)[:5]
-                        error_str = "%) |{0:5.2f}".format(train_error_)[:10] + "|"
+                        error_str = "%) |{0:5.4f}".format(train_error_)[:10] + "|"
                         print(epoch_str, perc_str, error_str)
 
                         if epoch % 5 == 0 and test:
