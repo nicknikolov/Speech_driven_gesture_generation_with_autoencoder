@@ -104,5 +104,6 @@ if __name__ == '__main__':
 
     # And save into files
     # np.save(DATA_DIR+"/"+str(fl.FLAGS.layer1_width)+"/Y_39_encoded.npy", encoded_39_data)
-    np.savetxt(DATA_DIR+"/"+str(fl.FLAGS.layer1_width)+"/Y_39_encoded.txt", encoded_39_data)
+    # np.savetxt(DATA_DIR+"/"+str(fl.FLAGS.layer1_width)+"/Y_39_encoded.txt", encoded_39_data)
+    np.savetxt(DATA_DIR+"/"+str(fl.FLAGS.layer1_width)+"/Y_32_encoded.txt", encoded_39_data)
 
